@@ -15,5 +15,8 @@ class Transaction extends Model
         'transaction_date',
         'result_code',
         'result_desc',
+        'type',
+        'description',
+        'balance',
     ];
 }

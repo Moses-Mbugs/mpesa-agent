@@ -21,7 +21,7 @@ class StatementController extends Controller
     {
         $request->validate([
             'file' => 'required|file|mimes:pdf|max:10240', // 10MB max
-            'phone' => 'required|string', // To associate with a user
+            'phone' => 'nullable|string', // Optional, will try to extract from statement
         ]);
 
         if ($request->hasFile('file')) {
@@ -33,17 +33,40 @@ class StatementController extends Controller
             $fullPath = Storage::path($path);
 
             try {
-                $parsedData = $this->parser->parsePdf($fullPath);
+                $result = $this->parser->parsePdf($fullPath);
+                $transactions = $result['transactions'];
+                $metadata = $result['metadata'];
+
+                $phoneNumber = $request->phone;
+                $detectedPhone = null;
+
+                if (!empty($metadata['phone_number'])) {
+                    $extractedPhone = $metadata['phone_number'];
+                    // Normalize 2547.../2541... to 07.../01...
+                    if (str_starts_with($extractedPhone, '254')) {
+                        $extractedPhone = '0' . substr($extractedPhone, 3);
+                    }
+                    $phoneNumber = $extractedPhone;
+                    $detectedPhone = $phoneNumber;
+                }
+
+                if (empty($phoneNumber)) {
+                    // Clean up file if processing fails
+                    // Storage::delete($path); // Optional: delete file
+                    return response()->json([
+                        'error' => 'Could not detect phone number from statement. Please provide one manually.'
+                    ], 400);
+                }
 
                 $count = 0;
-                foreach ($parsedData as $data) {
+                foreach ($transactions as $data) {
                     // Avoid duplicates
                     if (Transaction::where('mpesa_receipt', $data['mpesa_receipt'])->exists()) {
                         continue;
                     }
 
                     Transaction::create([
-                        'phone_number' => $request->phone,
+                        'phone_number' => $phoneNumber,
                         'mpesa_receipt' => $data['mpesa_receipt'],
                         'transaction_date' => $data['transaction_date'],
                         'description' => $data['description'],
@@ -58,7 +81,8 @@ class StatementController extends Controller
 
                 return response()->json([
                     'message' => 'Statement processed successfully',
-                    'transactions_imported' => $count
+                    'transactions_imported' => $count,
+                    'detected_phone' => $detectedPhone
                 ]);
 
             } catch (\Exception $e) {

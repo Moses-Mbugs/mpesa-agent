@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\Transaction;
-use OpenAI;
+use Illuminate\Support\Facades\Http;
 use Carbon\Carbon;
 
 class MpesaSummaryAgent
@@ -59,24 +59,38 @@ Monthly Series (YYYY-MM => sent/received): " . collect($monthlySeries)->map(func
 ";
 
         try {
-            $client = OpenAI::client(env('OPENAI_API_KEY'));
+            $apiKey = env('GEMINI_API_KEY');
+            if (!$apiKey) {
+                throw new \Exception("GEMINI_API_KEY not found");
+            }
 
-            $response = $client->chat()->create([
-                'model' => 'gpt-4o-mini',
-                'messages' => [
+            $prompt = "You are a financial assistant one of the best in kenya that writes clear monthly summaries for M-Pesa users in Kenya. Be concise, data-driven, and actionable.\n\n" .
+                      "Here is the transaction data:\n\n{$dataSummary}\n\n" .
+                      "Task:\n1) In 5-8 bullets, summarize the period. Include: total sent/received, net flow, top spend categories, largest transaction, and the most unusual spike if any.\n also add average daily spendings" .
+                      "2) Compare the last month in range to the prior month: mention change in sent and received.\n" .
+                      "3) Suggest 2 saving tips tailored to the categories.\nKeep it friendly and use KES.";
+
+            $response = Http::withHeaders([
+                'Content-Type' => 'application/json',
+            ])->post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={$apiKey}", [
+                'contents' => [
                     [
-                        'role' => 'system',
-                        'content' => 'You are a financial assistant that writes clear monthly summaries for M-Pesa users in Kenya. Be concise, data-driven, and actionable.'
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => "Here is the transaction data:\n\n{$dataSummary}\n\nTask:\n1) In 5-8 bullets, summarize the period. Include: total sent/received, net flow, top spend categories, largest transaction, and the most unusual spike if any.\n2) Compare the last month in range to the prior month: mention change in sent and received.\n3) Suggest 2 saving tips tailored to the categories.\nKeep it friendly and use KES."
+                        'parts' => [
+                            ['text' => $prompt]
+                        ]
                     ]
-                ],
+                ]
             ]);
 
-            return $response->choices[0]->message->content;
+            if ($response->failed()) {
+                throw new \Exception("Gemini API Error: " . $response->body());
+            }
+
+            $responseData = $response->json();
+            return $responseData['candidates'][0]['content']['parts'][0]['text'] ?? "Could not generate summary from Gemini response.";
+
         } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("Gemini Summary Error: " . $e->getMessage());
             $fallback = [];
             $fallback[] = "Period: {$startDate} → {$endDate}";
             $fallback[] = "Total Sent: KES " . number_format($totalSent, 2);

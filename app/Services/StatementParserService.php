@@ -24,11 +24,34 @@ class StatementParserService
             // Log raw text for debugging
             Log::info("Parsed PDF Text: " . substr($text, 0, 500));
 
-            return $this->extractTransactions($text);
+            $metadata = $this->extractMetadata($text);
+            $transactions = $this->extractTransactions($text);
+
+            return [
+                'metadata' => $metadata,
+                'transactions' => $transactions
+            ];
         } catch (Exception $e) {
             Log::error("PDF Parsing Error: " . $e->getMessage());
             throw new Exception("Failed to parse PDF statement.");
         }
+    }
+
+    private function extractMetadata(string $text)
+    {
+        $metadata = [];
+        if (preg_match('/Mobile Number:\s+(\d+)/i', $text, $matches)) {
+            // Convert 254... to 0... if needed, but standard is 07... or 2547...
+            // Let's keep it as is, or normalize? User input likely 07...
+            // M-Pesa statements usually show 2547...
+            // Dashboard usually expects 07... or just string match.
+            // Let's just return what is found.
+            $metadata['phone_number'] = $matches[1];
+        }
+        if (preg_match('/Customer Name:\s+(.+)/i', $text, $matches)) {
+            $metadata['customer_name'] = trim($matches[1]);
+        }
+        return $metadata;
     }
 
     private function extractTransactions(string $text)

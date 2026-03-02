@@ -13,7 +13,7 @@ class MpesaSummaryAgent
         $transactions = Transaction::where('phone_number', $phone)
             ->where(function ($query) use ($startDate, $endDate) {
                 $query->whereBetween('created_at', [$startDate, $endDate])
-                      ->orWhereBetween('transaction_date', [$startDate, $endDate]);
+                    ->orWhereBetween('transaction_date', [$startDate, $endDate]);
             })
             ->get();
 
@@ -47,16 +47,20 @@ class MpesaSummaryAgent
             });
 
         $dataSummary = "Period: {$startDate} to {$endDate}
-Total Sent: KES {$totalSent}
-Total Received: KES {$totalReceived}
-Net Flow: KES " . ($totalReceived - $totalSent) . "
-Average Daily Spend: KES " . number_format($avgDailySpend, 2) . "
-Total Paybill: KES {$totalPaybill}
-Total Buy Goods: KES {$totalTill}
-Largest Transaction: KES {$largestTransaction->amount}
-Top Spend Categories: " . $categorySums->map(function ($v, $k) { return "{$k} KES {$v}"; })->values()->implode(', ') . "
-Monthly Series (YYYY-MM => sent/received): " . collect($monthlySeries)->map(function ($v, $k) { return "{$k} => {$v['sent']}/{$v['received']}"; })->implode('; ') . "
-";
+            Total Sent: KES {$totalSent}
+            Total Received: KES {$totalReceived}
+            Net Flow: KES " . ($totalReceived - $totalSent) . "
+            Average Daily Spend: KES " . number_format($avgDailySpend, 2) . "
+            Total Paybill: KES {$totalPaybill}
+            Total Buy Goods: KES {$totalTill}
+            Largest Transaction: KES {$largestTransaction->amount}
+            Top Spend Categories: " . $categorySums->map(function ($v, $k) {
+                        return "{$k} KES {$v}";
+                    })->values()->implode(', ') . "
+            Monthly Series (YYYY-MM => sent/received): " . collect($monthlySeries)->map(function ($v, $k) {
+                        return "{$k} => {$v['sent']}/{$v['received']}";
+                    })->implode('; ') . "
+            ";
 
         try {
             $apiKey = env('GEMINI_API_KEY');
@@ -65,10 +69,10 @@ Monthly Series (YYYY-MM => sent/received): " . collect($monthlySeries)->map(func
             }
 
             $prompt = "You are a financial assistant one of the best in kenya that writes clear monthly summaries for M-Pesa users in Kenya. Be concise, data-driven, and actionable.\n\n" .
-                      "Here is the transaction data:\n\n{$dataSummary}\n\n" .
-                      "Task:\n1) In 5-8 bullets, summarize the period. Include: total sent/received, net flow, top spend categories, largest transaction, and the most unusual spike if any.\n also add average daily spendings" .
-                      "2) Compare the last month in range to the prior month: mention change in sent and received.\n" .
-                      "3) Suggest 2 saving tips tailored to the categories.\nKeep it friendly and use KES.";
+                "Here is the transaction data:\n\n{$dataSummary}\n\n" .
+                "Task:\n1) In 5-8 bullets, summarize the period. Include: total sent/received, net flow, top spend categories, largest transaction, and the most unusual spike if any.\n also add average daily spendings" .
+                "2) Compare the last month in range to the prior month: mention change in sent and received.\n" .
+                "3) Suggest 2 saving tips tailored to the categories.\nKeep it friendly and use KES.";
 
             $response = Http::withHeaders([
                 'Content-Type' => 'application/json',
@@ -88,7 +92,6 @@ Monthly Series (YYYY-MM => sent/received): " . collect($monthlySeries)->map(func
 
             $responseData = $response->json();
             return $responseData['candidates'][0]['content']['parts'][0]['text'] ?? "Could not generate summary from Gemini response.";
-
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::error("Gemini Summary Error: " . $e->getMessage());
             $fallback = [];
@@ -97,7 +100,9 @@ Monthly Series (YYYY-MM => sent/received): " . collect($monthlySeries)->map(func
             $fallback[] = "Total Received: KES " . number_format($totalReceived, 2);
             $fallback[] = "Net Flow: KES " . number_format($totalReceived - $totalSent, 2);
             $fallback[] = "Average Daily Spend: KES " . number_format($avgDailySpend, 2);
-            $fallback[] = "Top Categories: " . $categorySums->map(function ($v, $k) { return "{$k} KES " . number_format($v, 2); })->values()->implode(', ');
+            $fallback[] = "Top Categories: " . $categorySums->map(function ($v, $k) {
+                return "{$k} KES " . number_format($v, 2);
+            })->values()->implode(', ');
             $fallback[] = "Largest Transaction: KES " . number_format($largestTransaction->amount, 2);
 
             $ms = collect($monthlySeries);
